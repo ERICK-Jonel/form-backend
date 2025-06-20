@@ -1,24 +1,43 @@
+// server.js
 const express = require("express");
 const nodemailer = require("nodemailer");
 const app = express();
 
 app.use(express.json());
 
-// (Opcional) Almacenar IDs ya usados para evitar replay
-const usedIds = new Set();
+// Memoria simple de submissionId ya procesados
+const processedIds = new Set();
 
+// Ruta Health Check
+app.get("/", (req, res) => res.send("OK"));
+
+// Endpoint /submit con chequeo de ID único
 app.post("/submit", async (req, res) => {
-  const { submissionId, nombre, apellido, telefono, email, curso, terminos } = req.body;
+  const {
+    submissionId,
+    nombre,
+    apellido,
+    telefono,
+    email,
+    curso,
+    terminos,
+  } = req.body;
 
-  if (!submissionId || usedIds.has(submissionId)) {
+  // Validar submissionId
+  if (!submissionId) {
+    return res.status(400).json({ error: "Falta submissionId." });
+  }
+  if (processedIds.has(submissionId)) {
     return res.status(400).json({ error: "Formulario ya enviado." });
   }
-  usedIds.add(submissionId);
+  processedIds.add(submissionId);
 
+  // Validar campos obligatorios
   if (!nombre || !apellido || !telefono || !email || !curso || !terminos) {
     return res.status(400).json({ error: "Faltan datos obligatorios." });
   }
 
+  // Configurar transporter Nodemailer
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT, 10),
@@ -30,24 +49,25 @@ app.post("/submit", async (req, res) => {
   });
 
   try {
+    // Envío de correo
     await transporter.sendMail({
-      from:    `"Web Inscripción" <${process.env.EMAIL_USER}>`,
-      to:      process.env.RECEIVER_EMAIL,
+      from: `"Web Inscripción" <${process.env.EMAIL_USER}>`,
+      to: process.env.RECEIVER_EMAIL,
       subject: "Nueva inscripción",
       html: `
         <p><b>Nombre:</b> ${nombre} ${apellido}</p>
         <p><b>Teléfono:</b> ${telefono}</p>
         <p><b>Email:</b> ${email}</p>
         <p><b>Curso:</b> ${curso}</p>
-      `
+      `,
     });
-    res.json({ message: "Enviado con éxito." });
+    return res.json({ message: "Enviado con éxito." });
   } catch (err) {
     console.error("Error enviando email:", err);
-    res.status(500).json({ error: "Error al enviar correo." });
+    return res.status(500).json({ error: "Error al enviar correo." });
   }
 });
 
+// Levantar servidor
 const PORT = process.env.PORT || 3000;
-app.get("/", (_, res) => res.send("OK"));
 app.listen(PORT, () => console.log(`Server en ${PORT}`));
